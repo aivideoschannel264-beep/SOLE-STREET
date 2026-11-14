@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>SOLE STREET Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@800;900&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--k:#000;--w:#fff;--g1:#f3f3f3;--g2:#d9d9d9;--g3:#8a8a8a}
+*{box-sizing:border-box;margin:0}body{font:400 14px/1.5 'Instrument Sans',sans-serif;background:var(--g1);color:var(--k)}
+h1,h2,.logo{font-family:Archivo,sans-serif;letter-spacing:-.02em}
+header{background:var(--k);color:var(--w);padding:14px 16px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
+.logo{font-weight:900;font-size:18px}
+nav{display:flex;gap:6px;overflow-x:auto;padding:12px 16px;background:var(--w);border-bottom:1px solid var(--g2)}
+nav button{padding:9px 16px;border:1px solid var(--g2);background:var(--w);cursor:pointer;white-space:nowrap}nav button.on{background:var(--k);color:var(--w)}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+.box{background:var(--w);border:1px solid var(--g2);padding:16px;margin-bottom:14px}
+h2{font-size:22px;font-weight:800;margin-bottom:12px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.stats .box{margin:0}.stats b{display:block;font:800 24px Archivo}
+label{display:block;font-weight:500;margin:10px 0 3px}input,select,textarea{width:100%;padding:10px;border:1px solid var(--g2);background:var(--w);font:inherit}
+input[type=checkbox]{width:auto}
+.btn{background:var(--k);color:var(--w);border:1px solid var(--k);padding:10px 18px;cursor:pointer;font:inherit;font-weight:600}.btn.o{background:var(--w);color:var(--k)}.btn.s{padding:6px 12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.it{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--g2)}.it:last-child{border:0}.it img{width:56px;height:56px;object-fit:cover;background:var(--g1)}.it>div{flex:1}
+.st{background:var(--g1);padding:2px 9px;font-size:12px}small{color:var(--g3)}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--k);color:var(--w);padding:10px 20px;display:none;z-index:9}
+.thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.thumbs div{position:relative}.thumbs img{width:64px;height:64px;object-fit:cover}.thumbs button{position:absolute;top:0;right:0;background:var(--k);color:var(--w);border:0;cursor:pointer}
+@media(max-width:600px){.g2{grid-template-columns:1fr}}
+</style></head><body>
+<div id="root"></div><div id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script>
+const sb=supabase.createClient(CFG.URL,CFG.KEY);
+const $=s=>document.querySelector(s),R=n=>CFG.CUR+' '+Number(n||0).toLocaleString();
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+const CATS={men:"Men's Shoes",women:"Women's Shoes",sneakers:'Sneakers',sports:'Sports Shoes',casual:'Casual Shoes'};
+const ST={pending:'Pending',confirmed:'Confirmed',ordered_from_supplier:'Ordered from supplier',shipped:'Shipped',delivered:'Delivered',cancelled:'Cancelled'};
+const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2600)};
+const T={dash:'Dashboard',prod:'Products',ord:'Orders',cus:'Customers',cou:'Coupons',ban:'Banners'};
+let imgs=[];
+async function boot(msg){
+ const{data:{user}}=await sb.auth.getUser();
+ if(user){const{data:p}=await sb.from('profiles').select('role').eq('id',user.id).single();if(p?.role==='admin')return shell();msg='This account is not an admin.';await sb.auth.signOut()}
+ $('#root').innerHTML=`<div class="wrap" style="max-width:400px;padding-top:60px"><div class="box"><h2>SOLE STREET Admin</h2>${msg?`<p style="color:#b00">${msg}</p>`:''}<form id="lf"><label>Email</label><input name="e" type="email" required><label>Password</label><input name="p" type="password" required><div class="row"><button class="btn">Login</button></div></form></div></div>`;
+ $('#lf').onsubmit=async e=>{e.preventDefault();const f=e.target,{error}=await sb.auth.signInWithPassword({email:f.e.value,password:f.p.value});error?boot(error.message):boot()};
+}
+function shell(){
+ $('#root').innerHTML=`<header><span class="logo">SOLE STREET Admin</span><button class="btn o s" onclick="sb.auth.signOut().then(()=>boot())">Log out</button></header><nav>${Object.entries(T).map(([k,v])=>`<button id="t-${k}" onclick="tab('${k}')">${v}</button>`).join('')}</nav><div class="wrap" id="v"></div>`;tab('dash');
+}
+function tab(k){document.querySelectorAll('nav button').forEach(b=>b.classList.remove('on'));$('#t-'+k).classList.add('on');({dash,prod,ord,cus,cou,ban})[k]()}
+async function dash(){
+ const[{data:o},{data:c}]=await Promise.all([sb.from('orders').select('id,total,status'),sb.from('order_private').select('*')]);
+ const ok=(o||[]).filter(x=>x.status!='cancelled'),ids=new Set(ok.map(x=>x.id));
+ const rev=ok.reduce((a,x)=>a+Number(x.total),0),cost=(c||[]).filter(x=>ids.has(x.order_id)).reduce((a,x)=>a+Number(x.cost_total),0);
+ const by=s=>(o||[]).filter(x=>x.status==s).length;
+ $('#v').innerHTML=`<div class="stats"><div class="box">Orders<b>${(o||[]).length}</b></div><div class="box">Pending<b>${by('pending')}</b></div><div class="box">Sales<b>${R(rev)}</b></div><div class="box">Supplier cost<b>${R(cost)}</b></div><div class="box">Profit<b>${R(rev-cost)}</b></div></div>
+ <div class="box" style="margin-top:14px"><h2>Orders by status</h2>${Object.entries(ST).map(([k,v])=>`<div class="tot">${v}: <b>${by(k)}</b></div>`).join('')}</div>`;
+}
+function parseSizes(t){const o={};t.split(',').forEach(x=>{const[a,b]=x.split(':').map(s=>s.trim());if(a)o[a]=Math.max(0,parseInt(b)||0)});return o}
+const sizeStr=s=>Object.entries(s||{}).map(([a,b])=>a+':'+b).join(', ');
+async function prod(){
+ const[{data:p},{data:pp}]=await Promise.all([sb.from('products').select('*').order('id',{ascending:false}),sb.from('product_private').select('*')]);
+ window.PR=p||[];window.PP=Object.fromEntries((pp||[]).map(x=>[x.product_id,x]));
+ $('#v').innerHTML=`<div class="box"><h2 id="ft">Add new shoes</h2><form id="pf"><input type="hidden" name="id">
+ <div class="g2"><div><label>Name</label><input name="name" required></div><div><label>Category</label><select name="category">${Object.entries(CATS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+ <div><label>Selling price</label><input name="price" type="number" min="0" required></div><div><label>Supplier cost</label><input name="cost" type="number" min="0" value="0"></div>
+ <div><label>Supplier name</label><input name="sn"></div><div><label>Supplier link</label><input name="su"></div></div>
+ <label>Description</label><textarea name="description" rows="3"></textarea>
+ <label>Sizes and stock (size:quantity, comma separated)</label><input name="sizes" placeholder="40:5, 41:3, 42:8">
+ <label>Supplier notes (private)</label><input name="sno">
+ <label>Images (choose one or more)</label><input type="file" name="files" accept="image/*" multiple><div class="thumbs" id="th"></div>
+ <label><input type="checkbox" name="active" checked> Visible in store</label><div id="mg" style="margin-top:6px"></div>
+ <div class="row"><button class="btn">Save product</button><button type="button" class="btn o" onclick="prod()">Clear</button></div></form></div>
+ <div class="box"><h2>All products (${PR.length})</h2>${PR.map(x=>`<div class="it"><img src="${esc(x.images?.[0]||'')}" alt=""><div><b>${esc(x.name)}</b> ${x.active?'':'<span class="st">Hidden</span>'}<br><small>${CATS[x.category]} · ${R(x.price)} · profit ${R(x.price-(PP[x.id]?.cost||0))} · stock ${Object.values(x.sizes||{}).reduce((a,b)=>a+Number(b),0)}</small></div><button class="btn o s" onclick="ed(${x.id})">Edit</button><button class="btn o s" onclick="del(${x.id})">Delete</button></div>`).join('')||'No products yet.'}</div>`;
+ imgs=[];const f=$('#pf');
+ f.price.oninput=f.cost.oninput=()=>{const p=+f.price.value,c=+f.cost.value;$('#mg').innerHTML=p?`Profit per pair: <b>${R(p-c)}</b> (${Math.round((p-c)/p*100)}% margin)`:''};
+ f.onsubmit=async e=>{e.preventDefault();const btn=f.querySelector('.btn');btn.disabled=true;
+  try{
+   for(const file of f.files.files){const path=Date.now()+'-'+Math.random().toString(36).slice(2,7)+'-'+file.name.replace(/[^\w.]/g,'');
+    const{error}=await sb.storage.from('products').upload(path,file);if(error)throw error;imgs.push(sb.storage.from('products').getPublicUrl(path).data.publicUrl)}
+   const row={name:f.name.value,category:f.category.value,description:f.description.value,price:+f.price.value,sizes:parseSizes(f.sizes.value),images:imgs,active:f.active.checked};
+   if(f.id.value)row.id=+f.id.value;
+   const{data,error}=await sb.from('products').upsert(row).select().single();if(error)throw error;
+   const{error:e2}=await sb.from('product_private').upsert({product_id:data.id,cost:+f.cost.value||0,supplier_name:f.sn.value,supplier_url:f.su.value,supplier_notes:f.sno.value});if(e2)throw e2;
+   toast('Product saved');prod();
+  }catch(err){toast(err.message);btn.disabled=false}};
+}
+function th(){$('#th').innerHTML=imgs.map((u,i)=>`<div><img src="${esc(u)}" alt=""><button type="button" onclick="imgs.splice(${i},1);th()">×</button></div>`).join('')}
+function ed(id){
+ const p=PR.find(x=>x.id==id),q=PP[id]||{},f=$('#pf');
+ $('#ft').textContent='Edit product';f.id.value=p.id;f.name.value=p.name;f.category.value=p.category;f.price.value=p.price;f.cost.value=q.cost||0;f.sn.value=q.supplier_name||'';f.su.value=q.supplier_url||'';f.sno.value=q.supplier_notes||'';
+ f.description.value=p.description||'';f.sizes.value=sizeStr(p.sizes);f.active.checked=p.active;imgs=[...(p.images||[])];th();f.price.oninput();scrollTo(0,0);
+}
+async function del(id){if(!confirm('Delete this product permanently?'))return;const{error}=await sb.from('products').delete().eq('id',id);error?toast(error.message):(toast('Deleted'),prod())}
+async function ord(){
+ const{data}=await sb.from('orders').select('*').order('created_at',{ascending:false});
+ $('#v').innerHTML=`<h2>Orders</h2>`+((data||[]).map(o=>`<div class="box"><b>Order #${o.id}</b> · ${new Date(o.created_at).toLocaleString()} <span class="st">${ST[o.status]}</span>
+ <p style="margin-top:6px"><b>${esc(o.name)}</b> · ${esc(o.phone)}<br>${esc(o.address)}, ${esc(o.city)}</p>
+ <p>${o.items.map(i=>esc(i.name)+' (size '+esc(i.size)+') ×'+i.qty).join('<br>')}</p>
+ <p>Total <b>${R(o.total)}</b>${o.coupon?' (code '+esc(o.coupon)+')':''} · Payment: <b>${o.payment_method}</b>${o.payment_ref?' · Txn ID: '+esc(o.payment_ref):''}</p>
+ <div class="g2"><select id="s${o.id}">${Object.entries(ST).map(([k,v])=>`<option value="${k}" ${k==o.status?'selected':''}>${v}</option>`).join('')}</select><input id="n${o.id}" placeholder="Note for customer (courier, tracking no.)" value="${esc(o.note||'')}"></div>
+ <div class="row"><button class="btn s" onclick="us(${o.id})">Update order</button></div></div>`).join('')||'<div class="box">No orders yet.</div>');
+}
+async function us(id){const{error}=await sb.from('orders').update({status:$('#s'+id).value,note:$('#n'+id).value}).eq('id',id);toast(error?error.message:'Order updated')}
+async function cus(){
+ const{data}=await sb.from('profiles').select('*').order('created_at',{ascending:false});
+ $('#v').innerHTML=`<div class="box"><h2>Customers (${(data||[]).length})</h2>${(data||[]).map(c=>`<div class="it"><div><b>${esc(c.full_name||'—')}</b> ${c.role=='admin'?'<span class="st">Admin</span>':''}<br><small>${esc(c.email)} · ${esc(c.phone||'')}</small></div></div>`).join('')}</div>`;
+}
+async function cou(){
+ const{data}=await sb.from('coupons').select('*');
+ $('#v').innerHTML=`<div class="box"><h2>Add coupon</h2><form id="cf" class="g2"><div><label>Code</label><input name="c" required></div><div><label>Discount %</label><input name="p" type="number" min="1" max="90" required></div><div><button class="btn">Add coupon</button></div></form></div>
+ <div class="box"><h2>Coupons</h2>${(data||[]).map(c=>`<div class="it"><div><b>${esc(c.code)}</b> · ${c.percent}% ${c.active?'':'<span class="st">Off</span>'}</div><button class="btn o s" onclick="tc('${esc(c.code)}',${!c.active})">${c.active?'Turn off':'Turn on'}</button><button class="btn o s" onclick="dc('${esc(c.code)}')">Delete</button></div>`).join('')||'None yet.'}</div>`;
+ $('#cf').onsubmit=async e=>{e.preventDefault();const f=e.target,{error}=await sb.from('coupons').upsert({code:f.c.value.trim().toUpperCase(),percent:+f.p.value});error?toast(error.message):cou()};
+}
+const tc=async(c,a)=>{await sb.from('coupons').update({active:a}).eq('code',c);cou()},dc=async c=>{await sb.from('coupons').delete().eq('code',c);cou()};
+async function ban(){
+ const{data}=await sb.from('banners').select('*').order('sort');
+ $('#v').innerHTML=`<div class="box"><h2>Add homepage banner</h2><form id="bf"><div class="g2"><div><label>Headline</label><input name="t" required></div><div><label>Sub-text</label><input name="s"></div><div><label>Button goes to</label><select name="c"><option value="all">All shoes</option>${Object.entries(CATS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div><div><label>Order (0 = first)</label><input name="o" type="number" value="0"></div></div><label>Banner image (wide photo)</label><input type="file" name="f" accept="image/*" required><div class="row"><button class="btn">Add banner</button></div></form></div>
+ <div class="box"><h2>Banners</h2>${(data||[]).map(b=>`<div class="it"><img src="${esc(b.image_url)}" alt=""><div><b>${esc(b.title)}</b><br><small>${esc(b.subtitle||'')}</small></div><button class="btn o s" onclick="tb(${b.id},${!b.active})">${b.active?'Hide':'Show'}</button><button class="btn o s" onclick="db(${b.id})">Delete</button></div>`).join('')||'No banners yet.'}</div>`;
+ $('#bf').onsubmit=async e=>{e.preventDefault();const f=e.target,file=f.f.files[0],path='banner-'+Date.now()+'-'+file.name.replace(/[^\w.]/g,'');
+  const{error}=await sb.storage.from('products').upload(path,file);if(error)return toast(error.message);
+  const{error:e2}=await sb.from('banners').insert({title:f.t.value,subtitle:f.s.value,category:f.c.value,sort:+f.o.value,image_url:sb.storage.from('products').getPublicUrl(path).data.publicUrl});e2?toast(e2.message):ban()};
+}
+const tb=async(i,a)=>{await sb.from('banners').update({active:a}).eq('id',i);ban()},db=async i=>{await sb.from('banners').delete().eq('id',i);ban()};
+boot();
+</script></body></html>
